@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>覚える単語トレーナー</title>
+<style>
+  :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","メイリオ",sans-serif}
+  body{max-width:920px;margin:24px auto;padding:18px;border-radius:10px;background:#fbfbfd;color:#111;box-shadow:0 6px 24px rgba(20,20,30,0.06)}
+  h1{margin:0 0 8px;font-size:1.4rem}
+  p.small{color:#555;margin:6px 0 14px;font-size:0.95rem}
+  .grid{display:grid;grid-template-columns:1fr 320px;gap:18px}
+  textarea,input,button,select{font:inherit}
+  textarea{width:100%;height:150px;padding:10px;border-radius:8px;border:1px solid #ddd;resize:vertical}
+  .panel{background:#fff;padding:12px;border-radius:8px;border:1px solid #eee}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  button{background:#1466ff;color:#fff;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
+  button.secondary{background:#e6e9ef;color:#111}
+  button.alt{background:#2dbb6e}
+  .smallbtn{padding:6px 8px;font-size:0.95rem}
+  .card{margin-top:12px;padding:16px;border-radius:10px;background:linear-gradient(180deg,#fff,#fbfdff);box-shadow:0 4px 12px rgba(12,20,40,0.04);min-height:120px;display:flex;flex-direction:column;justify-content:space-between}
+  .word{font-size:1.4rem;font-weight:700}
+  .meaning{color:#333;margin-top:8px}
+  .answers{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  .answer{padding:8px;border-radius:8px;border:1px solid #e0e4ee;background:#fff;cursor:pointer}
+  .stats{font-size:0.9rem;color:#444;margin-top:8px}
+  .footer{font-size:0.85rem;color:#666;margin-top:12px}
+  label{display:block;margin:8px 0 4px;font-weight:600}
+  .muted{color:#666;font-size:0.9rem}
+  .list{max-height:240px;overflow:auto;padding:8px;border-radius:8px;border:1px dashed #eee;background:#fff}
+  .list-item{padding:6px;border-bottom:1px solid #f6f7fb;font-size:0.95rem;display:flex;justify-content:space-between;gap:8px}
+  .tag{font-size:0.8rem;color:#888}
+  .kbd{background:#f2f4f9;padding:2px 6px;border-radius:6px;border:1px solid #e6e9ef}
+</style>
+</head>
+<body>
+  <h1>覚える単語トレーナー（ローカル）</h1>
+  <p class="small">※単語リストを貼り付けて「読み込む」 → 「出題」を押すだけ。SRS（Leitner）で効率よく復習します。</p>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <label>単語リストを貼り付け（1行に「日付,単語,日本語」の形式。区切りはカンマ or タブ）</label>
+        <textarea id="inputData" placeholder="例: 2025/8/11,culinary,料理の"></textarea>
+        <div class="controls">
+          <button id="loadBtn" class="smallbtn">読み込む</button>
+          <button id="loadSample" class="smallbtn secondary">サンプルを読み込む</button>
+          <button id="clearStorage" class="smallbtn secondary">ローカルデータ削除</button>
+          <select id="modeSelect" class="smallbtn">
+            <option value="card">フラッシュカード（和訳を表示）</option>
+            <option value="mc">4択（英→和）</option>
+          </select>
+          <button id="startBtn" class="smallbtn alt">出題開始</button>
+        </div>
+
+        <div id="trainerArea" class="card" style="display:none">
+          <div>
+            <div class="word" id="wordText">word</div>
+            <div class="meaning muted" id="hintText">意味（確認用）</div>
+            <div id="mcArea" style="display:none">
+              <div class="answers" id="answers"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+            <div class="stats" id="stats">0 件（復習優先: 0）</div>
+            <div style="display:flex;gap:6px">
+              <button id="showMeaning" class="smallbtn secondary">意味表示</button>
+              <button id="knownBtn" class="smallbtn">覚えた ✅</button>
+              <button id="unknownBtn" class="smallbtn secondary">まだ ❌</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <div>保存: <span class="muted">ブラウザの localStorage を使用</span></div>
+          <div style="margin-top:6px">エクスポート / インポート:
+            <button id="exportBtn" class="smallbtn">JSON出力</button>
+            <button id="importBtn" class="smallbtn secondary">JSON読込</button>
+            <input id="importFile" type="file" accept="application/json" style="display:none" />
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px" class="panel">
+        <label>説明（ざっくり）</label>
+        <div class="muted">
+          ・覚えた：カードの「箱（box）」が上がり、次回出題タイミングが後ろにずれます。<br>
+          ・まだ：箱が1に戻ります。<br>
+          ・SRSの箱は1〜5。箱2以降は復習間隔が伸びます。<br>
+          ・「出題開始」は「まだ復習対象のカードのみ」を優先して出題します。全部出すことも可能。
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <label>単語一覧（読み込んだ内容）</label>
+        <div id="list" class="list"><div class="muted">まだ読み込まれていません</div></div>
+      </div>
+
+      <div class="panel" style="margin-top:12px">
+        <label>操作</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="nextBtn" class="smallbtn">次のカード</button>
+          <button id="prevBtn" class="smallbtn secondary">戻る</button>
+          <button id="dueOnly" class="smallbtn">復習対象のみ表示</button>
+          <button id="allCards" class="smallbtn secondary">全カード表示</button>
+        </div>
+        <div id="boxStats" class="muted" style="margin-top:8px">箱の分布: -</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const STORAGE_KEY = 'vocab_trainer_cards_v1';
+  const INTERVALS = [0, 1, 2, 5, 14]; // box -> days until next review (box1 immediate, box5 14日)
+  let cards = []; // {id, date, word, meaning, box(1-5), lastReviewed, nextReview}
+  let currentIndex = -1;
+  let currentList = []; // indices of cards in order for quiz
+  const el = id => document.getElementById(id);
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
+    renderList();
+    renderBoxStats();
+  }
+  function loadStorage() {
+    const v = localStorage.getItem(STORAGE_KEY);
+    if (v) {
+      try { cards = JSON.parse(v) } catch(e){ cards = [] }
+    } else cards = [];
+  }
+
+  function parseInput(text) {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const out = [];
+    for (const line of lines) {
+      // split by comma or tab
+      const parts = line.split(/\t|,/).map(p => p.trim());
+      if (parts.length >= 3) {
+        const date = parts[0];
+        const word = parts[1];
+        const meaning = parts.slice(2).join(', ');
+        out.push({date,word,meaning});
+      } else if (parts.length === 2) {
+        out.push({date:'', word:parts[0], meaning:parts[1]});
+      } else {
+        // try whitespace split fallback
+        const s = line.split(/\s+/);
+        if (s.length >= 2) out.push({date:'',word:s[0],meaning:s.slice(1).join(' ')});
+      }
+    }
+    return out;
+  }
+
+  function idGen() { return 'c_' + Math.random().toString(36).slice(2,10) }
+
+  function addCards(list) {
+    const now = Date.now();
+    for (const it of list) {
+      cards.push({
+        id: idGen(),
+        date: it.date||'',
+        word: it.word,
+        meaning: it.meaning,
+        box: 1,
+        lastReviewed: null,
+        nextReview: now // due immediately
+      });
+    }
+    save();
+  }
+
+  function loadSampleData() {
+    const sample = [
+`2025/4/4,strange,奇妙な(こと) 不思議な(こと) 未知の
+2025/4/4,twins,双子
+2025/4/4,bright,明るい
+2025/4/4,whereas,一方で
+2025/8/11,argue,主張
+2025/8/11,culinary,料理の
+2025/8/11,indicate,示す
+2025/8/11,cuisine,料理
+2025/8/11,nutrition,栄養
+2025/8/11,to sum up,要約すると
+2025/8/11,ruin,台無しにする
+2025/8/11,meanwhile,その間,一方で
+2025/8/11,reveal,明らかにする
+2025/8/11,authentic,本物の
+2025/8/11,mainly,主に
+2025/8/11,accommodation,宿泊施設,収容
+2025/8/11,rather,それよりも
+2025/8/11,shortage,不足
+2025/8/11,expressions,表現
+2025/8/11,kiosk,休憩所`
+    ].join('\n');
+    el('inputData').value = sample;
+  }
+
+  function renderList(filterDue=false) {
+    const node = el('list');
+    node.innerHTML = '';
+    const now = Date.now();
+    const items = cards.map((c,i)=>({c,i}));
+    const filtered = filterDue ? items.filter(x=>x.c.nextReview <= now) : items;
+    if (filtered.length === 0) {
+      node.innerHTML = '<div class="muted">該当するカードがありません</div>';
+      return;
+    }
+    for (const {c,i} of filtered) {
+      const div = document.createElement('div');
+      div.className = 'list-item';
+      div.innerHTML = `<div><strong>${escapeHtml(c.word)}</strong> <span class="muted">(${escapeHtml(c.date)})</span><div style="font-size:0.95rem;color:#444">${escapeHtml(c.meaning)}</div></div>
+      <div style="text-align:right"><div class="tag">箱:${c.box}</div>
+      <div class="muted" style="font-size:0.8rem">${c.nextReview? new Date(c.nextReview).toLocaleString():''}</div></div>`;
+      node.appendChild(div);
+    }
+  }
+
+  function escapeHtml(s){ return (s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;') }
+
+  function scheduleNext(card, correct) {
+    const now = Date.now();
+    if (correct) {
+      card.box = Math.min(5, card.box + 1);
+    } else {
+      card.box = 1;
+    }
+    const days = INTERVALS[Math.max(1, card.box)-1] || 0;
+    card.lastReviewed = now;
+    card.nextReview = now + days * 24 * 60 * 60 * 1000;
+  }
+
+  function shuffleArray(a) {
+    for (let i=a.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
+    }
+  }
+
+  function buildCurrentList(dueOnly=true) {
+    const now = Date.now();
+    const idxs = cards.map((c,i)=>i).filter(i=>cards[i]);
+    let pool = idxs.filter(i => !dueOnly || cards[i].nextReview <= now);
+    if (pool.length === 0 && dueOnly) pool = idxs.slice(); // fallback to all
+    shuffleArray(pool);
+    currentList = pool;
+    currentIndex = 0;
+  }
+
+  function renderCard() {
+    if (!currentList.length || currentIndex < 0 || currentIndex >= currentList.length) {
+      el('trainerArea').style.display = 'none';
+      return;
+    }
+    const idx = currentList[currentIndex];
+    const card = cards[idx];
+    el('trainerArea').style.display = 'flex';
+    el('wordText').textContent = card.word;
+    el('hintText').textContent = '（意味は非表示）';
+    el('hintText').style.display = 'none';
+    const mode = el('modeSelect').value;
+    if (mode === 'mc') renderMC(card, idx);
+    else { el('mcArea').style.display = 'none'; }
+    el('stats').textContent = `${currentIndex+1} / ${currentList.length} （復習優先:${cards.filter(c=>c.nextReview <= Date.now()).length}）`;
+  }
+
+  function renderMC(card, idx) {
+    // choose 3 random wrong meanings
+    const pool = cards.filter((c,i)=>i!==idx).map(c=>c.meaning);
+    shuffleArray(pool);
+    const choices = pool.slice(0,3).concat([card.meaning]);
+    shuffleArray(choices);
+    el('mcArea').style.display = 'block';
+    const answers = el('answers'); answers.innerHTML = '';
+    for (const ch of choices) {
+      const btn = document.createElement('div');
+      btn.className = 'answer';
+      btn.textContent = ch;
+      btn.onclick = () => {
+        const correct = (ch === card.meaning);
+        indicateAnswer(btn, correct);
+        scheduleNext(card, correct);
+        save();
+        setTimeout(()=> {
+          if (correct) nextCard();
+        }, 650);
+      };
+      answers.appendChild(btn);
+    }
+  }
+
+  function indicateAnswer(elBtn, correct) {
+    elBtn.style.borderColor = correct ? '#2dbb6e' : '#ff6b6b';
+    elBtn.style.background = correct ? '#f2fff6' : '#fff6f6';
+  }
+
+  function nextCard() {
+    if (currentIndex < currentList.length - 1) currentIndex++;
+    else currentIndex = 0;
+    renderCard();
+  }
+  function prevCard() {
+    if (currentIndex > 0) currentIndex--;
+    else currentIndex = currentList.length - 1;
+    renderCard();
+  }
+
+  // UI bindings
+  el('loadBtn').onclick = () => {
+    const text = el('inputData').value.trim();
+    if (!text) { alert('データを貼ってから読み込んでください'); return; }
+    const parsed = parseInput(text);
+    if (parsed.length === 0) { alert('解析できる行がありませんでした'); return; }
+    addCards(parsed);
+    alert(parsed.length + ' 件を読み込みました。リストを確認してください。');
+  };
+  el('loadSample').onclick = () => loadSampleData();
+  el('startBtn').onclick = () => {
+    buildCurrentList(true);
+    renderCard();
+  };
+  el('nextBtn').onclick = nextCard;
+  el('prevBtn').onclick = prevCard;
+  el('showMeaning').onclick = () => {
+    el('hintText').style.display = 'block';
+    el('hintText').textContent = cards[currentList[currentIndex]].meaning;
+  };
+  el('knownBtn').onclick = () => {
+    const idx = currentList[currentIndex];
+    scheduleNext(cards[idx], true);
+    save();
+    nextCard();
+  };
+  el('unknownBtn').onclick = () => {
+    const idx = currentList[currentIndex];
+    scheduleNext(cards[idx], false);
+    save();
+    nextCard();
+  };
+  el('dueOnly').onclick = () => renderList(true);
+  el('allCards').onclick = () => renderList(false);
+  el('clearStorage').onclick = () => {
+    if (!confirm('ローカルの保存データを完全に削除します。よろしいですか？')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    loadStorage(); renderList(); renderBoxStats(); alert('削除しました');
+  };
+
+  el('exportBtn').onclick = () => {
+    const dataStr = JSON.stringify(cards, null, 2);
+    const blob = new Blob([dataStr], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'vocab_export.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  el('importBtn').onclick = () => el('importFile').click();
+  el('importFile').onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const imported = JSON.parse(r.result);
+        if (!Array.isArray(imported)) throw new Error('形式が違います');
+        // basic validation: keep fields if exist, otherwise ignore
+        cards = imported.map(c => ({
+          id: c.id || idGen(),
+          date: c.date || '',
+          word: c.word || '?',
+          meaning: c.meaning || '',
+          box: c.box || 1,
+          lastReviewed: c.lastReviewed || null,
+          nextReview: c.nextReview || Date.now()
+        }));
+        save();
+        alert('インポート完了');
+      } catch(err) { alert('インポート失敗: ' + err.message) }
+    };
+    r.readAsText(f);
+  };
+
+  function renderBoxStats() {
+    const counts = [0,0,0,0,0,0];
+    for (const c of cards) counts[c.box||1] = (counts[c.box||1]||0) + 1;
+    el('boxStats').textContent = `箱: 1:${counts[1]} 2:${counts[2]} 3:${counts[3]} 4:${counts[4]} 5:${counts[5]}`;
+  }
+
+  // init
+  loadStorage();
+  renderList(false);
+  renderBoxStats();
+
+  // helper: allow Enter to go next in MC mode
+  document.addEventListener('keydown', e => {
+    if (e.key === ' '){ e.preventDefault(); el('showMeaning').click(); }
+    if (e.key === 'ArrowRight') nextCard();
+    if (e.key === 'ArrowLeft') prevCard();
+  });
+
+})();
+</script>
+</body>
+</html>
