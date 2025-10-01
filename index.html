@@ -42,6 +42,7 @@
       <div class="panel">
         <label>単語リストを貼り付け（1行に「日付,単語,日本語」の形式。区切りはカンマ or タブ）</label>
         <textarea id="inputData" placeholder="例: 2025/8/11,culinary,料理の"></textarea>
+        <div id="colSelectArea" style="display:none;margin-bottom:12px"></div>
         <div class="controls">
           <button id="loadBtn" class="smallbtn">読み込む</button>
           <button id="loadSample" class="smallbtn secondary">サンプルを読み込む</button>
@@ -308,14 +309,12 @@
     renderCard();
   }
 
-  // UI bindings
   el('loadBtn').onclick = () => {
     const text = el('inputData').value.trim();
-    if (!text) { alert('データを貼ってから読み込んでください'); return; }
-    const parsed = parseInput(text);
-    if (parsed.length === 0) { alert('解析できる行がありませんでした'); return; }
-    addCards(parsed);
-    alert(parsed.length + ' 件を読み込みました。リストを確認してください。');
+    if(!text){ alert('データを貼ってから読み込んでください'); return; }
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    if(lines.length==0){ alert('解析できる行がありませんでした'); return; }
+    showColSelectPreview(lines);
   };
   el('loadSample').onclick = () => loadSampleData();
   el('startBtn').onclick = () => {
@@ -403,6 +402,98 @@
   });
 
 })();
+
+  const COL_ROLES = [
+    {value:'date',label:'日付'},
+    {value:'word',label:'単語'},
+    {value:'meaning',label:'意味'},
+    {value:'ignore',label:'無視'},
+  ];
+
+  // 列選択UI＋プレビュー関数
+  function showColSelectPreview(lines){
+    const previewRows = lines.slice(0,6); // プレビュー6行
+    // 列数推定
+    const colCount = Math.max(...previewRows.map(l=>l.split(/\t|,/).length));
+    const area = el('colSelectArea');
+    area.innerHTML = '';
+    area.style.display = 'block';
+
+    // 列ごとにselect生成
+    const selects = [];
+    const selRow = document.createElement('div');
+    selRow.style.display = 'flex';
+    selRow.style.alignItems = 'center';
+    selRow.style.marginBottom = '6px';
+    for(let ci=0;ci<colCount;ci++){
+      const sel = document.createElement('select');
+      sel.style.marginRight = '6px';
+      COL_ROLES.forEach(r=>{
+        const opt = document.createElement('option');
+        opt.value = r.value;
+        opt.textContent = r.label;
+        // 初期値: 1列目→日付, 2列目→単語, 3列目→意味
+        if(ci===0&&r.value==='date') opt.selected=true;
+        if(ci===1&&r.value==='word') opt.selected=true;
+        if(ci===2&&r.value==='meaning') opt.selected=true;
+        sel.appendChild(opt);
+      });
+      selects.push(sel);
+      selRow.appendChild(sel);
+    }
+    area.appendChild(selRow);
+
+    // プレビュー表
+    const table = document.createElement('table');
+    table.style.marginTop = '8px';
+    table.style.borderCollapse = 'collapse';
+    table.style.background = '#f8fafd';
+    table.style.fontSize = '0.98rem';
+    for(const line of previewRows){
+      const tr = document.createElement('tr');
+      line.split(/\t|,/).forEach((cell,ci)=>{
+        const td = document.createElement('td');
+        td.textContent = cell.trim();
+        td.style.padding='2px 8px';
+        td.style.border='1px solid #e3e6ef';
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    }
+    area.appendChild(table);
+
+    // 確定ボタン
+    const btn = document.createElement('button');
+    btn.textContent = 'この列割り当てで読み込む';
+    btn.className = 'smallbtn alt';
+    btn.style.marginTop = '10px';
+    btn.onclick = ()=>{
+      // 解析してカード生成
+      const roles = selects.map(s=>s.value);
+      const out = [];
+      for(const line of lines){
+        const parts = line.split(/\t|,/).map(p=>p.trim());
+        let obj = {};
+        for(let ci=0;ci<roles.length;ci++){
+          if(roles[ci]==='ignore') continue;
+          obj[roles[ci]] = parts[ci]||'';
+        }
+        // 必須: word, meaning
+        if(obj.word&&obj.meaning){
+          out.push({
+            date: obj.date||'',
+            word: obj.word,
+            meaning: obj.meaning,
+          });
+        }
+      }
+      addCards(out);
+      area.style.display='none';
+      alert(out.length+' 件を読み込みました。リストを確認してください。');
+    };
+    area.appendChild(btn);
+  }
+
 </script>
 </body>
 </html>
