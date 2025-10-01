@@ -114,70 +114,76 @@
   </div>
 
 <script>
-(() => {
-  const STORAGE_KEY = 'vocab_trainer_cards_v1';
-  const INTERVALS = [0, 1, 2, 5, 14]; // box -> days until next review (box1 immediate, box5 14日)
-  let cards = []; // {id, date, word, meaning, box(1-5), lastReviewed, nextReview}
-  let currentIndex = -1;
-  let currentList = []; // indices of cards in order for quiz
-  const el = id => document.getElementById(id);
-  function el(id) {
-    return document.getElementById(id);
-  }
-  function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
-    renderList();
-    renderBoxStats();
-  }
-  function loadStorage() {
-    const v = localStorage.getItem(STORAGE_KEY);
-    if (v) {
-      try { cards = JSON.parse(v) } catch(e){ cards = [] }
-    } else cards = [];
-  }
+function el(id) {
+  return document.getElementById(id);
+}
+const STORAGE_KEY = 'vocab_trainer_cards_v1';
+const INTERVALS = [0, 1, 2, 5, 14]; // box -> days until next review (box1 immediate, box5 14日)
+let cards = []; // {id, date, word, meaning, box(1-5), lastReviewed, nextReview}
+let currentIndex = -1;
+let currentList = []; // indices of cards in order for quiz
 
-  function parseInput(text) {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const out = [];
-    for (const line of lines) {
-      // split by comma or tab
-      const parts = line.split(/\t|,/).map(p => p.trim());
-      if (parts.length >= 3) {
-        const date = parts[0];
-        const word = parts[1];
-        const meaning = parts.slice(2).join(', ');
-        out.push({date,word,meaning});
-      } else if (parts.length === 2) {
-        out.push({date:'', word:parts[0], meaning:parts[1]});
-      } else {
-        // try whitespace split fallback
-        const s = line.split(/\s+/);
-        if (s.length >= 2) out.push({date:'',word:s[0],meaning:s.slice(1).join(' ')});
-      }
+const COL_ROLES = [
+  {value:'date',label:'日付'},
+  {value:'word',label:'単語'},
+  {value:'meaning',label:'意味'},
+  {value:'ignore',label:'無視'},
+];
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
+  renderList();
+  renderBoxStats();
+}
+function loadStorage() {
+  const v = localStorage.getItem(STORAGE_KEY);
+  if (v) {
+    try { cards = JSON.parse(v) } catch(e){ cards = [] }
+  } else cards = [];
+}
+
+function parseInput(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const out = [];
+  for (const line of lines) {
+    // split by comma or tab
+    const parts = line.split(/\t|,/).map(p => p.trim());
+    if (parts.length >= 3) {
+      const date = parts[0];
+      const word = parts[1];
+      const meaning = parts.slice(2).join(', ');
+      out.push({date,word,meaning});
+    } else if (parts.length === 2) {
+      out.push({date:'', word:parts[0], meaning:parts[1]});
+    } else {
+      // try whitespace split fallback
+      const s = line.split(/\s+/);
+      if (s.length >= 2) out.push({date:'',word:s[0],meaning:s.slice(1).join(' ')});
     }
-    return out;
   }
+  return out;
+}
 
-  function idGen() { return 'c_' + Math.random().toString(36).slice(2,10) }
+function idGen() { return 'c_' + Math.random().toString(36).slice(2,10) }
 
-  function addCards(list) {
-    const now = Date.now();
-    for (const it of list) {
-      cards.push({
-        id: idGen(),
-        date: it.date||'',
-        word: it.word,
-        meaning: it.meaning,
-        box: 1,
-        lastReviewed: null,
-        nextReview: now // due immediately
-      });
-    }
-    save();
+function addCards(list) {
+  const now = Date.now();
+  for (const it of list) {
+    cards.push({
+      id: idGen(),
+      date: it.date||'',
+      word: it.word,
+      meaning: it.meaning,
+      box: 1,
+      lastReviewed: null,
+      nextReview: now // due immediately
+    });
   }
+  save();
+}
 
-  function loadSampleData() {
-    const sample = [
+function loadSampleData() {
+  const sample = [
 `2025/4/4,strange,奇妙な(こと) 不思議な(こと) 未知の
 2025/4/4,twins,双子
 2025/4/4,bright,明るい
@@ -198,303 +204,294 @@
 2025/8/11,shortage,不足
 2025/8/11,expressions,表現
 2025/8/11,kiosk,休憩所`
-    ].join('\n');
-    el('inputData').value = sample;
+  ].join('\n');
+  el('inputData').value = sample;
+}
+
+function renderList(filterDue=false) {
+  const node = el('list');
+  node.innerHTML = '';
+  const now = Date.now();
+  const items = cards.map((c,i)=>({c,i}));
+  const filtered = filterDue ? items.filter(x=>x.c.nextReview <= now) : items;
+  if (filtered.length === 0) {
+    node.innerHTML = '<div class="muted">該当するカードがありません</div>';
+    return;
   }
-
-  function renderList(filterDue=false) {
-    const node = el('list');
-    node.innerHTML = '';
-    const now = Date.now();
-    const items = cards.map((c,i)=>({c,i}));
-    const filtered = filterDue ? items.filter(x=>x.c.nextReview <= now) : items;
-    if (filtered.length === 0) {
-      node.innerHTML = '<div class="muted">該当するカードがありません</div>';
-      return;
-    }
-    for (const {c,i} of filtered) {
-      const div = document.createElement('div');
-      div.className = 'list-item';
-      div.innerHTML = `<div><strong>${escapeHtml(c.word)}</strong> <span class="muted">(${escapeHtml(c.date)})</span><div style="font-size:0.95rem;color:#444">${escapeHtml(c.meaning)}</div></div>
-      <div style="text-align:right"><div class="tag">箱:${c.box}</div>
-      <div class="muted" style="font-size:0.8rem">${c.nextReview? new Date(c.nextReview).toLocaleString():''}</div></div>`;
-      node.appendChild(div);
-    }
+  for (const {c,i} of filtered) {
+    const div = document.createElement('div');
+    div.className = 'list-item';
+    div.innerHTML = `<div><strong>${escapeHtml(c.word)}</strong> <span class="muted">(${escapeHtml(c.date)})</span><div style="font-size:0.95rem;color:#444">${escapeHtml(c.meaning)}</div></div>
+    <div style="text-align:right"><div class="tag">箱:${c.box}</div>
+    <div class="muted" style="font-size:0.8rem">${c.nextReview? new Date(c.nextReview).toLocaleString():''}</div></div>`;
+    node.appendChild(div);
   }
+}
 
-  function escapeHtml(s){ return (s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;') }
+function escapeHtml(s){ return (s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;') }
 
-  function scheduleNext(card, correct) {
-    const now = Date.now();
-    if (correct) {
-      card.box = Math.min(5, card.box + 1);
-    } else {
-      card.box = 1;
-    }
-    const days = INTERVALS[Math.max(1, card.box)-1] || 0;
-    card.lastReviewed = now;
-    card.nextReview = now + days * 24 * 60 * 60 * 1000;
+function scheduleNext(card, correct) {
+  const now = Date.now();
+  if (correct) {
+    card.box = Math.min(5, card.box + 1);
+  } else {
+    card.box = 1;
   }
+  const days = INTERVALS[Math.max(1, card.box)-1] || 0;
+  card.lastReviewed = now;
+  card.nextReview = now + days * 24 * 60 * 60 * 1000;
+}
 
-  function shuffleArray(a) {
-    for (let i=a.length-1;i>0;i--){
-      const j=Math.floor(Math.random()*(i+1));
-      [a[i],a[j]]=[a[j],a[i]];
-    }
+function shuffleArray(a) {
+  for (let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
   }
+}
 
-  function buildCurrentList(dueOnly=true) {
-    const now = Date.now();
-    const idxs = cards.map((c,i)=>i).filter(i=>cards[i]);
-    let pool = idxs.filter(i => !dueOnly || cards[i].nextReview <= now);
-    if (pool.length === 0 && dueOnly) pool = idxs.slice(); // fallback to all
-    shuffleArray(pool);
-    currentList = pool;
-    currentIndex = 0;
+function buildCurrentList(dueOnly=true) {
+  const now = Date.now();
+  const idxs = cards.map((c,i)=>i).filter(i=>cards[i]);
+  let pool = idxs.filter(i => !dueOnly || cards[i].nextReview <= now);
+  if (pool.length === 0 && dueOnly) pool = idxs.slice(); // fallback to all
+  shuffleArray(pool);
+  currentList = pool;
+  currentIndex = 0;
+}
+
+function renderCard() {
+  if (!currentList.length || currentIndex < 0 || currentIndex >= currentList.length) {
+    el('trainerArea').style.display = 'none';
+    return;
   }
+  const idx = currentList[currentIndex];
+  const card = cards[idx];
+  el('trainerArea').style.display = 'flex';
+  el('wordText').textContent = card.word;
+  el('hintText').textContent = '（意味は非表示）';
+  el('hintText').style.display = 'none';
+  const mode = el('modeSelect').value;
+  if (mode === 'mc') renderMC(card, idx);
+  else { el('mcArea').style.display = 'none'; }
+  el('stats').textContent = `${currentIndex+1} / ${currentList.length} （復習優先:${cards.filter(c=>c.nextReview <= Date.now()).length}）`;
+}
 
-  function renderCard() {
-    if (!currentList.length || currentIndex < 0 || currentIndex >= currentList.length) {
-      el('trainerArea').style.display = 'none';
-      return;
-    }
-    const idx = currentList[currentIndex];
-    const card = cards[idx];
-    el('trainerArea').style.display = 'flex';
-    el('wordText').textContent = card.word;
-    el('hintText').textContent = '（意味は非表示）';
-    el('hintText').style.display = 'none';
-    const mode = el('modeSelect').value;
-    if (mode === 'mc') renderMC(card, idx);
-    else { el('mcArea').style.display = 'none'; }
-    el('stats').textContent = `${currentIndex+1} / ${currentList.length} （復習優先:${cards.filter(c=>c.nextReview <= Date.now()).length}）`;
-  }
-
-  function renderMC(card, idx) {
-    // choose 3 random wrong meanings
-    const pool = cards.filter((c,i)=>i!==idx).map(c=>c.meaning);
-    shuffleArray(pool);
-    const choices = pool.slice(0,3).concat([card.meaning]);
-    shuffleArray(choices);
-    el('mcArea').style.display = 'block';
-    const answers = el('answers'); answers.innerHTML = '';
-    for (const ch of choices) {
-      const btn = document.createElement('div');
-      btn.className = 'answer';
-      btn.textContent = ch;
-      btn.onclick = () => {
-        const correct = (ch === card.meaning);
-        indicateAnswer(btn, correct);
-        scheduleNext(card, correct);
-        save();
-        setTimeout(()=> {
-          if (correct) nextCard();
-        }, 650);
-      };
-      answers.appendChild(btn);
-    }
-  }
-
-  function indicateAnswer(elBtn, correct) {
-    elBtn.style.borderColor = correct ? '#2dbb6e' : '#ff6b6b';
-    elBtn.style.background = correct ? '#f2fff6' : '#fff6f6';
-  }
-
-  function nextCard() {
-    if (currentIndex < currentList.length - 1) currentIndex++;
-    else currentIndex = 0;
-    renderCard();
-  }
-  function prevCard() {
-    if (currentIndex > 0) currentIndex--;
-    else currentIndex = currentList.length - 1;
-    renderCard();
-  }
-
-  el('loadBtn').onclick = () => {
-    const text = el('inputData').value.trim();
-    if(!text){ alert('データを貼ってから読み込んでください'); return; }
-    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    if(lines.length==0){ alert('解析できる行がありませんでした'); return; }
-    showColSelectPreview(lines);
-  };
-  el('loadSample').onclick = () => loadSampleData();
-  el('startBtn').onclick = () => {
-    buildCurrentList(true);
-    renderCard();
-  };
-  el('nextBtn').onclick = nextCard;
-  el('prevBtn').onclick = prevCard;
-  el('showMeaning').onclick = () => {
-    el('hintText').style.display = 'block';
-    el('hintText').textContent = cards[currentList[currentIndex]].meaning;
-  };
-  el('knownBtn').onclick = () => {
-    const idx = currentList[currentIndex];
-    scheduleNext(cards[idx], true);
-    save();
-    nextCard();
-  };
-  el('unknownBtn').onclick = () => {
-    const idx = currentList[currentIndex];
-    scheduleNext(cards[idx], false);
-    save();
-    nextCard();
-  };
-  el('dueOnly').onclick = () => renderList(true);
-  el('allCards').onclick = () => renderList(false);
-  el('clearStorage').onclick = () => {
-    if (!confirm('ローカルの保存データを完全に削除します。よろしいですか？')) return;
-    localStorage.removeItem(STORAGE_KEY);
-    loadStorage(); renderList(); renderBoxStats(); alert('削除しました');
-  };
-
-  el('exportBtn').onclick = () => {
-    const dataStr = JSON.stringify(cards, null, 2);
-    const blob = new Blob([dataStr], {type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'vocab_export.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  el('importBtn').onclick = () => el('importFile').click();
-  el('importFile').onchange = (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = () => {
-      try {
-        const imported = JSON.parse(r.result);
-        if (!Array.isArray(imported)) throw new Error('形式が違います');
-        // basic validation: keep fields if exist, otherwise ignore
-        cards = imported.map(c => ({
-          id: c.id || idGen(),
-          date: c.date || '',
-          word: c.word || '?',
-          meaning: c.meaning || '',
-          box: c.box || 1,
-          lastReviewed: c.lastReviewed || null,
-          nextReview: c.nextReview || Date.now()
-        }));
-        save();
-        alert('インポート完了');
-      } catch(err) { alert('インポート失敗: ' + err.message) }
+function renderMC(card, idx) {
+  // choose 3 random wrong meanings
+  const pool = cards.filter((c,i)=>i!==idx).map(c=>c.meaning);
+  shuffleArray(pool);
+  const choices = pool.slice(0,3).concat([card.meaning]);
+  shuffleArray(choices);
+  el('mcArea').style.display = 'block';
+  const answers = el('answers'); answers.innerHTML = '';
+  for (const ch of choices) {
+    const btn = document.createElement('div');
+    btn.className = 'answer';
+    btn.textContent = ch;
+    btn.onclick = () => {
+      const correct = (ch === card.meaning);
+      indicateAnswer(btn, correct);
+      scheduleNext(card, correct);
+      save();
+      setTimeout(()=> {
+        if (correct) nextCard();
+      }, 650);
     };
-    r.readAsText(f);
-  };
-
-  function renderBoxStats() {
-    const counts = [0,0,0,0,0,0];
-    for (const c of cards) counts[c.box||1] = (counts[c.box||1]||0) + 1;
-    el('boxStats').textContent = `箱: 1:${counts[1]} 2:${counts[2]} 3:${counts[3]} 4:${counts[4]} 5:${counts[5]}`;
+    answers.appendChild(btn);
   }
+}
 
-  // init
-  loadStorage();
-  renderList(false);
-  renderBoxStats();
+function indicateAnswer(elBtn, correct) {
+  elBtn.style.borderColor = correct ? '#2dbb6e' : '#ff6b6b';
+  elBtn.style.background = correct ? '#f2fff6' : '#fff6f6';
+}
 
-  // helper: allow Enter to go next in MC mode
-  document.addEventListener('keydown', e => {
-    if (e.key === ' '){ e.preventDefault(); el('showMeaning').click(); }
-    if (e.key === 'ArrowRight') nextCard();
-    if (e.key === 'ArrowLeft') prevCard();
-  });
+function nextCard() {
+  if (currentIndex < currentList.length - 1) currentIndex++;
+  else currentIndex = 0;
+  renderCard();
+}
+function prevCard() {
+  if (currentIndex > 0) currentIndex--;
+  else currentIndex = currentList.length - 1;
+  renderCard();
+}
 
-})();
+el('loadBtn').onclick = () => {
+  const text = el('inputData').value.trim();
+  if(!text){ alert('データを貼ってから読み込んでください'); return; }
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(lines.length==0){ alert('解析できる行がありませんでした'); return; }
+  showColSelectPreview(lines);
+};
+el('loadSample').onclick = () => loadSampleData();
+el('startBtn').onclick = () => {
+  buildCurrentList(true);
+  renderCard();
+};
+el('nextBtn').onclick = nextCard;
+el('prevBtn').onclick = prevCard;
+el('showMeaning').onclick = () => {
+  el('hintText').style.display = 'block';
+  el('hintText').textContent = cards[currentList[currentIndex]].meaning;
+};
+el('knownBtn').onclick = () => {
+  const idx = currentList[currentIndex];
+  scheduleNext(cards[idx], true);
+  save();
+  nextCard();
+};
+el('unknownBtn').onclick = () => {
+  const idx = currentList[currentIndex];
+  scheduleNext(cards[idx], false);
+  save();
+  nextCard();
+};
+el('dueOnly').onclick = () => renderList(true);
+el('allCards').onclick = () => renderList(false);
+el('clearStorage').onclick = () => {
+  if (!confirm('ローカルの保存データを完全に削除します。よろしいですか？')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  loadStorage(); renderList(); renderBoxStats(); alert('削除しました');
+};
 
-  const COL_ROLES = [
-    {value:'date',label:'日付'},
-    {value:'word',label:'単語'},
-    {value:'meaning',label:'意味'},
-    {value:'ignore',label:'無視'},
-  ];
+el('exportBtn').onclick = () => {
+  const dataStr = JSON.stringify(cards, null, 2);
+  const blob = new Blob([dataStr], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'vocab_export.json';
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
-  // 列選択UI＋プレビュー関数
-  function showColSelectPreview(lines){
-    const previewRows = lines.slice(0,6); // プレビュー6行
-    // 列数推定
-    const colCount = Math.max(...previewRows.map(l=>l.split(/\t|,/).length));
-    const area = el('colSelectArea');
-    area.innerHTML = '';
-    area.style.display = 'block';
+el('importBtn').onclick = () => el('importFile').click();
+el('importFile').onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const imported = JSON.parse(r.result);
+      if (!Array.isArray(imported)) throw new Error('形式が違います');
+      // basic validation: keep fields if exist, otherwise ignore
+      cards = imported.map(c => ({
+        id: c.id || idGen(),
+        date: c.date || '',
+        word: c.word || '?',
+        meaning: c.meaning || '',
+        box: c.box || 1,
+        lastReviewed: c.lastReviewed || null,
+        nextReview: c.nextReview || Date.now()
+      }));
+      save();
+      alert('インポート完了');
+    } catch(err) { alert('インポート失敗: ' + err.message) }
+  };
+  r.readAsText(f);
+};
 
-    // 列ごとにselect生成
-    const selects = [];
-    const selRow = document.createElement('div');
-    selRow.style.display = 'flex';
-    selRow.style.alignItems = 'center';
-    selRow.style.marginBottom = '6px';
-    for(let ci=0;ci<colCount;ci++){
-      const sel = document.createElement('select');
-      sel.style.marginRight = '6px';
-      COL_ROLES.forEach(r=>{
-        const opt = document.createElement('option');
-        opt.value = r.value;
-        opt.textContent = r.label;
-        // 初期値: 1列目→日付, 2列目→単語, 3列目→意味
-        if(ci===0&&r.value==='date') opt.selected=true;
-        if(ci===1&&r.value==='word') opt.selected=true;
-        if(ci===2&&r.value==='meaning') opt.selected=true;
-        sel.appendChild(opt);
-      });
-      selects.push(sel);
-      selRow.appendChild(sel);
-    }
-    area.appendChild(selRow);
+function renderBoxStats() {
+  const counts = [0,0,0,0,0,0];
+  for (const c of cards) counts[c.box||1] = (counts[c.box||1]||0) + 1;
+  el('boxStats').textContent = `箱: 1:${counts[1]} 2:${counts[2]} 3:${counts[3]} 4:${counts[4]} 5:${counts[5]}`;
+}
 
-    // プレビュー表
-    const table = document.createElement('table');
-    table.style.marginTop = '8px';
-    table.style.borderCollapse = 'collapse';
-    table.style.background = '#f8fafd';
-    table.style.fontSize = '0.98rem';
-    for(const line of previewRows){
-      const tr = document.createElement('tr');
-      line.split(/\t|,/).forEach((cell,ci)=>{
-        const td = document.createElement('td');
-        td.textContent = cell.trim();
-        td.style.padding='2px 8px';
-        td.style.border='1px solid #e3e6ef';
-        tr.appendChild(td);
-      });
-      table.appendChild(tr);
-    }
-    area.appendChild(table);
+// init
+loadStorage();
+renderList(false);
+renderBoxStats();
 
-    // 確定ボタン
-    const btn = document.createElement('button');
-    btn.textContent = 'この列割り当てで読み込む';
-    btn.className = 'smallbtn alt';
-    btn.style.marginTop = '10px';
-    btn.onclick = ()=>{
-      // 解析してカード生成
-      const roles = selects.map(s=>s.value);
-      const out = [];
-      for(const line of lines){
-        const parts = line.split(/\t|,/).map(p=>p.trim());
-        let obj = {};
-        for(let ci=0;ci<roles.length;ci++){
-          if(roles[ci]==='ignore') continue;
-          obj[roles[ci]] = parts[ci]||'';
-        }
-        // 必須: word, meaning
-        if(obj.word&&obj.meaning){
-          out.push({
-            date: obj.date||'',
-            word: obj.word,
-            meaning: obj.meaning,
-          });
-        }
+// helper: allow Enter to go next in MC mode
+document.addEventListener('keydown', e => {
+  if (e.key === ' '){ e.preventDefault(); el('showMeaning').click(); }
+  if (e.key === 'ArrowRight') nextCard();
+  if (e.key === 'ArrowLeft') prevCard();
+});
+
+// 列選択UI＋プレビュー関数
+function showColSelectPreview(lines){
+  const previewRows = lines.slice(0,6); // プレビュー6行
+  // 列数推定
+  const colCount = Math.max(...previewRows.map(l=>l.split(/\t|,/).length));
+  const area = el('colSelectArea');
+  area.innerHTML = '';
+  area.style.display = 'block';
+
+  // 列ごとにselect生成
+  const selects = [];
+  const selRow = document.createElement('div');
+  selRow.style.display = 'flex';
+  selRow.style.alignItems = 'center';
+  selRow.style.marginBottom = '6px';
+  for(let ci=0;ci<colCount;ci++){
+    const sel = document.createElement('select');
+    sel.style.marginRight = '6px';
+    COL_ROLES.forEach(r=>{
+      const opt = document.createElement('option');
+      opt.value = r.value;
+      opt.textContent = r.label;
+      // 初期値: 1列目→日付, 2列目→単語, 3列目→意味
+      if(ci===0&&r.value==='date') opt.selected=true;
+      if(ci===1&&r.value==='word') opt.selected=true;
+      if(ci===2&&r.value==='meaning') opt.selected=true;
+      sel.appendChild(opt);
+    });
+    selects.push(sel);
+    selRow.appendChild(sel);
+  }
+  area.appendChild(selRow);
+
+  // プレビュー表
+  const table = document.createElement('table');
+  table.style.marginTop = '8px';
+  table.style.borderCollapse = 'collapse';
+  table.style.background = '#f8fafd';
+  table.style.fontSize = '0.98rem';
+  for(const line of previewRows){
+    const tr = document.createElement('tr');
+    line.split(/\t|,/).forEach((cell,ci)=>{
+      const td = document.createElement('td');
+      td.textContent = cell.trim();
+      td.style.padding='2px 8px';
+      td.style.border='1px solid #e3e6ef';
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  }
+  area.appendChild(table);
+
+  // 確定ボタン
+  const btn = document.createElement('button');
+  btn.textContent = 'この列割り当てで読み込む';
+  btn.className = 'smallbtn alt';
+  btn.style.marginTop = '10px';
+  btn.onclick = ()=>{
+    // 解析してカード生成
+    const roles = selects.map(s=>s.value);
+    const out = [];
+    for(const line of lines){
+      const parts = line.split(/\t|,/).map(p=>p.trim());
+      let obj = {};
+      for(let ci=0;ci<roles.length;ci++){
+        if(roles[ci]==='ignore') continue;
+        obj[roles[ci]] = parts[ci]||'';
       }
-      addCards(out);
-      area.style.display='none';
-      alert(out.length+' 件を読み込みました。リストを確認してください。');
-    };
-    area.appendChild(btn);
-  }
+      // 必須: word, meaning
+      if(obj.word&&obj.meaning){
+        out.push({
+          date: obj.date||'',
+          word: obj.word,
+          meaning: obj.meaning,
+        });
+      }
+    }
+    addCards(out);
+    area.style.display='none';
+    alert(out.length+' 件を読み込みました。リストを確認してください。');
+  };
+  area.appendChild(btn);
+}
 
 </script>
 </body>
