@@ -121,7 +121,9 @@
   let currentIndex = -1;
   let currentList = []; // indices of cards in order for quiz
   const el = id => document.getElementById(id);
-
+  function el(id) {
+    return document.getElementById(id);
+  }
   function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
     renderList();
